@@ -1,7 +1,11 @@
+using System;
+using System.Collections.Generic;
+
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace SourceGit.Views
@@ -11,6 +15,43 @@ namespace SourceGit.Views
         public LauncherPage()
         {
             InitializeComponent();
+        }
+
+        protected override void OnLoaded(RoutedEventArgs e)
+        {
+            base.OnLoaded(e);
+
+            _copyFeedbackTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1),
+                Tag = this,
+            };
+            _copyFeedbackTimer.Tick += static (o, _) =>
+            {
+                if (o is DispatcherTimer { Tag: LauncherPage page } timer)
+                {
+                    foreach (var grid in page._copyFeedbackGrids)
+                    {
+                        if (grid.Children.Count >= 2)
+                        {
+                            grid.Children[0].IsVisible = true;
+                            grid.Children[1].IsVisible = false;
+                        }
+                    }
+
+                    page._copyFeedbackGrids.Clear();
+                    timer.IsEnabled = false;
+                }
+            };
+        }
+
+        protected override void OnUnloaded(RoutedEventArgs e)
+        {
+            _copyFeedbackTimer.Tag = null;
+            _copyFeedbackTimer.IsEnabled = false;
+            _copyFeedbackGrids.Clear();
+
+            base.OnUnloaded(e);
         }
 
         private async void OnPopupSureByHotKey(object sender, RoutedEventArgs e)
@@ -66,8 +107,20 @@ namespace SourceGit.Views
 
         private async void OnCopyNotification(object sender, RoutedEventArgs e)
         {
-            if (sender is Button { DataContext: Models.Notification notice })
+            if (sender is Button { Content: Grid grid, DataContext: Models.Notification notice } &&
+                grid.Children.Count >= 2)
+            {
                 await this.CopyTextAsync(notice.Message);
+
+                grid.Children[0].IsVisible = false;
+                grid.Children[1].IsVisible = true;
+
+                if (!_copyFeedbackGrids.Contains(grid))
+                    _copyFeedbackGrids.Add(grid);
+
+                _copyFeedbackTimer?.Stop();
+                _copyFeedbackTimer?.Start();
+            }
 
             e.Handled = true;
         }
@@ -85,5 +138,8 @@ namespace SourceGit.Views
         {
             this.FindAncestorOfType<ChromelessWindow>()?.BeginMoveWindow(sender, e);
         }
+
+        private DispatcherTimer _copyFeedbackTimer = null;
+        private readonly List<Grid> _copyFeedbackGrids = [];
     }
 }
